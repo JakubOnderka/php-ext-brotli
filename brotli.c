@@ -7,12 +7,18 @@
 #include <php_ini.h>
 #include <ext/standard/info.h>
 #include <ext/standard/php_smart_string.h>
+#include <zend_smart_str.h>
 #if defined(HAVE_APCU_SUPPORT)
 #include <ext/standard/php_var.h>
 #include <ext/apcu/apc_serializer.h>
-#include <zend_smart_str.h>
 #endif
 #include "php_brotli.h"
+
+// zend_string_efree doesnt exist in PHP7.2, 20180731 is PHP 7.3
+#if ZEND_MODULE_API_NO < 20180731
+#define zend_string_efree(string) zend_string_free(string)
+#endif
+
 
 int le_state;
 
@@ -99,6 +105,14 @@ static zend_always_inline zend_string* php_brotli_string_output_truncate(zend_st
     }
     ZSTR_LEN(output) = real_length;
     ZSTR_VAL(output)[real_length] = '\0';
+    return output;
+}
+
+static zend_always_inline zend_string* php_brotli_smart_str_to_zend_string(smart_str* input) {
+    zend_string *output;
+    output = input->s;
+    output = php_brotli_string_output_truncate(output, ZSTR_LEN(input->s));
+    input->s = NULL;
     return output;
 }
 
@@ -1149,7 +1163,7 @@ static ZEND_FUNCTION(brotli_uncompress)
     long max_size = 0;
     char *in;
     size_t in_size;
-    smart_string out = {0};
+    smart_str out = {0};
 
     if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|l",
                               &in, &in_size, &max_size) == FAILURE) {
@@ -1181,7 +1195,7 @@ static ZEND_FUNCTION(brotli_uncompress)
                                                0);
         size_t used_out = buffer_size - available_out;
         if (used_out != 0) {
-            smart_string_appendl(&out, buffer, used_out);
+            smart_str_appendl(&out, buffer, used_out);
         }
     }
 
@@ -1191,12 +1205,18 @@ static ZEND_FUNCTION(brotli_uncompress)
     if (result != BROTLI_DECODER_RESULT_SUCCESS) {
         php_error_docref(NULL, E_WARNING,
                          "Brotli decompress failed\n");
-        smart_string_free(&out);
+        smart_str_free(&out);
         RETURN_FALSE;
     }
 
-    RETVAL_STRINGL(out.c, out.len);
-    smart_string_free(&out);
+    smart_str_0(&out);
+    RETVAL_NEW_STR(out.s);
+
+    //zend_string *str = smart_str_extract(&out);
+    //RETVAL_NEW_STR(str);
+
+    //zend_string *res = php_brotli_smart_str_to_zend_string(&out);
+    //RETVAL_NEW_STR(res);
 }
 
 static ZEND_FUNCTION(brotli_uncompress_init)
