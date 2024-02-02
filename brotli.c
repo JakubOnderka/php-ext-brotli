@@ -5,12 +5,12 @@
 #include <php.h>
 #include <SAPI.h>
 #include <php_ini.h>
+#include <zend_smart_str.h>
 #include <ext/standard/info.h>
 #include <ext/standard/php_smart_string.h>
 #if defined(HAVE_APCU_SUPPORT)
 #include <ext/standard/php_var.h>
 #include <ext/apcu/apc_serializer.h>
-#include <zend_smart_str.h>
 #endif
 #include "php_brotli.h"
 
@@ -105,6 +105,27 @@ static zend_always_inline zend_string* php_brotli_string_output_truncate(zend_st
     ZSTR_LEN(output) = real_length;
     ZSTR_VAL(output)[real_length] = '\0';
     return output;
+}
+
+static zend_always_inline zend_string* php_brotli_smart_str_to_string(smart_str *str) {
+	if (str->s) {
+	    zend_string *res;
+        smart_str_0(str);
+
+        size_t capacity = str->a;
+        size_t free_space = capacity - ZSTR_LEN(str->s);
+
+        // Reallocate just when capacity and real size differs a lot or the free space is bigger than 1 MB
+        if (UNEXPECTED(free_space > (capacity / 8) || free_space > (1024 * 1024))) {
+            str->s = zend_string_realloc(str->s, ZSTR_LEN(str->s), 0);
+        }
+
+        res = str->s;
+        str->s = NULL;
+        return res;
+	} else {
+		return ZSTR_EMPTY_ALLOC();
+	}
 }
 
 static int php_brotli_encoder_create(BrotliEncoderState **encoder,
@@ -1154,7 +1175,7 @@ static ZEND_FUNCTION(brotli_uncompress)
     long max_size = 0;
     char *in;
     size_t in_size;
-    smart_string out = {0};
+    smart_str out = {0};
 
     if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|l",
                               &in, &in_size, &max_size) == FAILURE) {
@@ -1167,8 +1188,7 @@ static ZEND_FUNCTION(brotli_uncompress)
 
     BrotliDecoderState *state = BrotliDecoderCreateInstance(NULL, NULL, NULL);
     if (!state) {
-        php_error_docref(NULL, E_WARNING,
-                         "Invalid Brotli state\n");
+        php_error_docref(NULL, E_WARNING, "Invalid Brotli state");
         RETURN_FALSE;
     }
 
@@ -1186,7 +1206,7 @@ static ZEND_FUNCTION(brotli_uncompress)
                                                0);
         size_t used_out = buffer_size - available_out;
         if (used_out != 0) {
-            smart_string_appendl(&out, buffer, used_out);
+            smart_str_appendl(&out, buffer, used_out);
         }
     }
 
@@ -1194,14 +1214,13 @@ static ZEND_FUNCTION(brotli_uncompress)
     efree(buffer);
 
     if (result != BROTLI_DECODER_RESULT_SUCCESS) {
-        php_error_docref(NULL, E_WARNING,
-                         "Brotli decompress failed\n");
-        smart_string_free(&out);
+        php_error_docref(NULL, E_WARNING, "Brotli decompress failed");
+        smart_str_free(&out);
         RETURN_FALSE;
     }
 
-    RETVAL_STRINGL(out.c, out.len);
-    smart_string_free(&out);
+    zend_string* output = php_brotli_smart_str_to_string(&out);
+    RETVAL_STR(output);
 }
 
 static ZEND_FUNCTION(brotli_uncompress_init)
