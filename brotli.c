@@ -1029,11 +1029,12 @@ static ZEND_FUNCTION(brotli_compress)
     long quality = BROTLI_DEFAULT_QUALITY;
     long mode =  BROTLI_MODE_GENERIC;
 
-    if (zend_parse_parameters(ZEND_NUM_ARGS(),
-                              "s|ll", &in, &in_size,
-                              &quality, &mode) == FAILURE) {
-        RETURN_FALSE;
-    }
+    ZEND_PARSE_PARAMETERS_START(1, 3)
+        Z_PARAM_STRING(in, in_size)
+        Z_PARAM_OPTIONAL
+        Z_PARAM_LONG(quality)
+        Z_PARAM_LONG(mode)
+    ZEND_PARSE_PARAMETERS_END();
 
     size_t out_size = BrotliEncoderMaxCompressedSize(in_size);
     zend_string *out = zend_string_alloc(out_size, 0);
