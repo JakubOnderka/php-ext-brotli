@@ -7,7 +7,6 @@
 #include <php_ini.h>
 #include <zend_smart_str.h>
 #include <ext/standard/info.h>
-#include <ext/standard/php_smart_string.h>
 #if defined(HAVE_APCU_SUPPORT)
 #include <ext/standard/php_var.h>
 #include <ext/apcu/apc_serializer.h>
@@ -1095,7 +1094,7 @@ static ZEND_FUNCTION(brotli_compress_add)
     zend_long mode = BROTLI_OPERATION_FLUSH;
     char *in_buf;
     size_t in_size;
-    smart_string out = {0};
+    smart_str out = {0};
 
     if (zend_parse_parameters(ZEND_NUM_ARGS(), "rs|l",
                               &res, &in_buf, &in_size, &mode) != SUCCESS) {
@@ -1128,13 +1127,12 @@ static ZEND_FUNCTION(brotli_compress_add)
                                         0)) {
             buffer_used = (size_t)(next_out - buffer);
             if (buffer_used) {
-                smart_string_appendl(&out, buffer, buffer_used);
+                smart_str_appendl(&out, buffer, buffer_used);
             }
         } else {
             efree(buffer);
-            smart_string_free(&out);
-            php_error_docref(NULL, E_WARNING,
-                             "Brotli incremental compress failed\n");
+            smart_str_free(&out);
+            php_error_docref(NULL, E_WARNING, "Brotli incremental compress failed");
             RETURN_FALSE;
         }
     }
@@ -1152,22 +1150,21 @@ static ZEND_FUNCTION(brotli_compress_add)
                                             0)) {
                 buffer_used = (size_t)(next_out - buffer);
                 if (buffer_used) {
-                    smart_string_appendl(&out, buffer, buffer_used);
+                    smart_str_appendl(&out, buffer, buffer_used);
                 }
             } else {
                 efree(buffer);
-                smart_string_free(&out);
-                php_error_docref(NULL, E_WARNING,
-                                 "Brotli incremental compress failed\n");
+                smart_str_free(&out);
+                php_error_docref(NULL, E_WARNING, "Brotli incremental compress failed");
                 RETURN_FALSE;
             }
         }
     }
 
-    RETVAL_STRINGL(out.c, out.len);
-
     efree(buffer);
-    smart_string_free(&out);
+
+    zend_string* output = php_brotli_smart_str_to_string(&out);
+    RETVAL_STR(output);
 }
 
 static ZEND_FUNCTION(brotli_uncompress)
@@ -1250,7 +1247,7 @@ static ZEND_FUNCTION(brotli_uncompress_add)
     zend_long mode = BROTLI_OPERATION_FLUSH;
     char *in_buf;
     size_t in_size;
-    smart_string out = {0};
+    smart_str out = {0};
 
     if (zend_parse_parameters(ZEND_NUM_ARGS(), "rs|l",
                               &res, &in_buf, &in_size, &mode) != SUCCESS) {
@@ -1284,14 +1281,14 @@ static ZEND_FUNCTION(brotli_uncompress_add)
                                                0);
         size_t buffer_used = buffer_size - available_out;
         if (buffer_used) {
-            smart_string_appendl(&out, buffer, buffer_used);
+            smart_str_appendl(&out, buffer, buffer_used);
         }
     }
 
-    RETVAL_STRINGL(out.c, out.len);
-
     efree(buffer);
-    smart_string_free(&out);
+
+    zend_string* output = php_brotli_smart_str_to_string(&out);
+    RETVAL_STR(output);
 }
 
 #if defined(HAVE_APCU_SUPPORT)
