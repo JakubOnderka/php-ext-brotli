@@ -14,6 +14,11 @@
 #endif
 #include "php_brotli.h"
 
+// zend_string_efree doesnt exist in PHP7.2, 20180731 is PHP 7.3
+#if ZEND_MODULE_API_NO < 20180731
+#define zend_string_efree(string) zend_string_free(string)
+#endif
+
 int le_state;
 
 # pragma GCC diagnostic ignored "-Wpointer-sign"
@@ -86,6 +91,21 @@ static zend_function_entry brotli_functions[] = {
 };
 
 static const size_t PHP_BROTLI_BUFFER_SIZE = 1 << 19;
+
+// Truncate string to given size
+static zend_always_inline zend_string* php_brotli_string_output_truncate(zend_string* output, size_t real_length)
+{
+    size_t capacity = ZSTR_LEN(output);
+    size_t free_space = capacity - real_length;
+
+    // Reallocate just when capacity and real size differs a lot or the free space is bigger than 1 MB
+    if (UNEXPECTED(free_space > (capacity / 8) || free_space > (1024 * 1024))) {
+        output = zend_string_truncate(output, real_length, 0);
+    }
+    ZSTR_LEN(output) = real_length;
+    ZSTR_VAL(output)[real_length] = '\0';
+    return output;
+}
 
 static int php_brotli_encoder_create(BrotliEncoderState **encoder,
                                      long quality, int lgwin, long mode)
@@ -996,7 +1016,7 @@ static ZEND_FUNCTION(brotli_compress)
     }
 
     size_t out_size = BrotliEncoderMaxCompressedSize(in_size);
-    char *out = (char *)emalloc(out_size);
+    zend_string *out = zend_string_alloc(out_size, 0);
 
     if (mode != BROTLI_MODE_GENERIC &&
         mode != BROTLI_MODE_TEXT &&
@@ -1012,15 +1032,15 @@ static ZEND_FUNCTION(brotli_compress)
 
     if (!BrotliEncoderCompress((int)quality, lgwin, (BrotliEncoderMode)mode,
                                in_size, (const uint8_t*)in,
-                               &out_size, (uint8_t*)out)) {
+                               &out_size, ZSTR_VAL(out))) {
         php_error_docref(NULL, E_WARNING,
                          "Brotli compress failed\n");
-        efree(out);
+        zend_string_efree(out);
         RETURN_FALSE;
     }
 
-    RETVAL_STRINGL(out, out_size);
-    efree(out);
+    output = php_brotli_string_output_truncate(output, out_size);
+    RETVAL_NEW_STR(output);
 }
 
 static ZEND_FUNCTION(brotli_compress_init)
