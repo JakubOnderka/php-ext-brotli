@@ -1039,8 +1039,8 @@ static ZEND_FUNCTION(brotli_compress)
         RETURN_FALSE;
     }
 
-    output = php_brotli_string_output_truncate(output, out_size);
-    RETVAL_NEW_STR(output);
+    out = php_brotli_string_output_truncate(out, out_size);
+    RETVAL_NEW_STR(out);
 }
 
 static ZEND_FUNCTION(brotli_compress_init)
